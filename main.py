@@ -42,7 +42,7 @@ def main():
     model = DDPM(max_t)
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3)
     n_epochs = 10
-    sample_every_n_iters = 100
+    sample_every_n_iters = 1000
 
     i = 0
     for _ in range(n_epochs):
@@ -50,10 +50,12 @@ def main():
             optimizer.zero_grad()
             epsilon = torch.randn_like(images)
             t = np.random.randint(0, max_t+1)
-            epsilon_pred, loss = model(images, epsilon, t)
+            xt, epsilon_pred, loss = model(images, epsilon, t)
             loss.backward()
             optimizer.step()
-            writer.add_images("train/images", make_grid(images), i)
+            writer.add_images("train/x0", make_grid(images), i)
+            writer.add_images("train/xt", make_grid(xt), i)
+            writer.add_scalar("train/t", t, i)
             writer.add_images("train/epsilon_pred", make_grid(epsilon_pred), i)
             writer.add_scalar("train/loss", loss.item(), i)
             writer.add_scalar("train/grad_norm", grad_norm(model.parameters()), i)

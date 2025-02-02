@@ -56,7 +56,7 @@ class DDPM(nn.Module):
         alpha_bar_t = self.alpha_bar_t(t)
         return np.sqrt(alpha_bar_t) * x0 + np.sqrt(1-alpha_bar_t) * epsilon
 
-    def forward(self, x0: torch.Tensor, epsilon: torch.Tensor, t: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x0: torch.Tensor, epsilon: torch.Tensor, t: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         :param x0: real images
         :param epsilon: multivariate gaussian noise sampled from N(0,1)
@@ -71,7 +71,7 @@ class DDPM(nn.Module):
         xt = self.xt(x0, epsilon, t)
         epsilon_pred = self._unet(xt)
         loss = nn.functional.mse_loss(epsilon_pred, epsilon)
-        return epsilon_pred, loss
+        return xt, epsilon_pred, loss
 
     @torch.no_grad()
     def beta_t(self, t: int) -> float:
