@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 
@@ -38,9 +39,53 @@ class UNet(nn.Module):
 
 
 class DDPM(nn.Module):
-    def __init__(self):
+    def __init__(self, max_t: int = 1000):
         super().__init__()
         self._unet = UNet()
+        self._max_t = max_t
 
-    def forward(self):
+    def xt(self, x0: torch.Tensor, epsilon: torch.Tensor, t: int) -> torch.Tensor:
+        """
+        :param x0: real images
+        :param epsilon: multivariate gaussian noise sampled from N(0,1)
+        :param t: timestep \\in [0, T]
+        :return: xt: the noisy version of x0 at timestep t, i.e.
+                \\sqrt{\\pi_{s=1}^t \\alpha_s} x_0 + \\sqrt{1 - \\pi_{s=1}^t \\alpha_s} epsilon
+        """
+
+        alpha_bar_t = self.alpha_bar_t(t)
+        return np.sqrt(alpha_bar_t) * x0 + np.sqrt(1-alpha_bar_t) * epsilon
+
+    def forward(self, x0: torch.Tensor, epsilon: torch.Tensor, t: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        :param x0: real images
+        :param epsilon: multivariate gaussian noise sampled from N(0,1)
+        :param t: timestep \\in [0, T]
+        :return: predicted noise and the MSE loss
+
+        Step 1: Sample x0, epsilon and a t
+        Step 2 (this method): compute xt, return the predicted noise using f(xt, t) and the MSE loss
+        """
+
+        assert x0.shape == epsilon.shape
+        xt = self.xt(x0, epsilon, t)
+        epsilon_pred = self._unet(xt)
+        loss = nn.functional.mse_loss(epsilon_pred, epsilon)
+        return epsilon_pred, loss
+
+    @torch.no_grad()
+    def beta_t(self, t: int) -> float:
+        beta_min = 0.0001
+        beta_max = 0.02
+        return beta_min + (beta_max - beta_min) * t/self._max_t
+
+    @torch.no_grad()
+    def alpha_bar_t(self, t: int) -> float:
+        prod = 1
+        for s in range(t+1):
+            prod *= 1 - self.beta_t(s)
+        return prod
+
+    @torch.no_grad()
+    def sample(self):
         pass

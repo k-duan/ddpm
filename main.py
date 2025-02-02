@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
-from model import UNet
+from model import DDPM
 
 
 def collate_fn(batch):
@@ -38,22 +38,27 @@ def main():
     dataloader = DataLoader(dataset=dataset, batch_size=16, shuffle=True, collate_fn=collate_fn)
     log_name = f"cifar10-ddpm-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     writer = SummaryWriter(log_dir=f"runs/{log_name}")
-    model = UNet()
+    max_t = 1000
+    model = DDPM(max_t)
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3)
+    n_epochs = 10
 
     i = 0
-    for images in dataloader:
-        optimizer.zero_grad()
-        recons = model(images)
-        loss = torch.nn.functional.mse_loss(images, recons)
-        loss.backward()
-        optimizer.step()
-        writer.add_images("train/images", make_grid(images), i)
-        writer.add_images("train/recons", make_grid(recons), i)
-        writer.add_scalar("train/loss", loss.item(), i)
-        writer.add_scalar("train/grad_norm", grad_norm(model.parameters()), i)
-        i += 1
+    for _ in range(n_epochs):
+        for images in dataloader:
+            optimizer.zero_grad()
+            epsilon = torch.randn_like(images)
+            t = np.random.randint(0, max_t+1)
+            epsilon_pred, loss = model(images, epsilon, t)
+            loss.backward()
+            optimizer.step()
+            writer.add_images("train/images", make_grid(images), i)
+            writer.add_images("train/epsilon_pred", make_grid(epsilon_pred), i)
+            writer.add_scalar("train/loss", loss.item(), i)
+            writer.add_scalar("train/grad_norm", grad_norm(model.parameters()), i)
+            i += 1
 
 
 if __name__ == "__main__":
+    torch.manual_seed(123)
     main()
