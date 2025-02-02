@@ -1,9 +1,13 @@
 from datetime import datetime
+from typing import Iterator
+
 import torch
 import torchvision
 from torch.utils.data import DataLoader
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+
+from model import UNet
 
 
 def collate_fn(batch):
@@ -20,18 +24,35 @@ def make_grid(images: torch.Tensor) -> torch.Tensor:
     batch_size = images.size(0)
     return torchvision.utils.make_grid(images, nrow=round(np.sqrt(batch_size))).unsqueeze(dim=0)
 
+def grad_norm(parameters: Iterator[torch.nn.Parameter]) -> float:
+   total_norm = 0.0
+   for p in parameters:
+      if p.grad is not None:
+         param_norm = p.grad.data.norm(2)
+         total_norm += param_norm.item() ** 2
+   return total_norm ** 0.5
+
+
 def main():
     dataset = torchvision.datasets.CIFAR10("./CIFAR10", download=True)
     dataloader = DataLoader(dataset=dataset, batch_size=16, shuffle=True, collate_fn=collate_fn)
     log_name = f"cifar10-ddpm-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     writer = SummaryWriter(log_dir=f"runs/{log_name}")
-
-    print(len(dataloader))
+    model = UNet()
+    optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3)
 
     i = 0
     for images in dataloader:
+        optimizer.zero_grad()
+        recons = model(images)
+        loss = torch.nn.functional.mse_loss(images, recons)
+        loss.backward()
+        optimizer.step()
         writer.add_images("train/images", make_grid(images), i)
-        break
+        writer.add_images("train/recons", make_grid(recons), i)
+        writer.add_scalar("train/loss", loss.item(), i)
+        writer.add_scalar("train/grad_norm", grad_norm(model.parameters()), i)
+        i += 1
 
 
 if __name__ == "__main__":
