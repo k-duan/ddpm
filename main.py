@@ -42,6 +42,7 @@ def main():
     model = DDPM(max_t)
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3)
     n_epochs = 10
+    sample_every_n_iters = 100
 
     i = 0
     for _ in range(n_epochs):
@@ -57,6 +58,10 @@ def main():
             writer.add_scalar("train/loss", loss.item(), i)
             writer.add_scalar("train/grad_norm", grad_norm(model.parameters()), i)
             i += 1
+
+            if i > 1 and i % sample_every_n_iters == 0:
+                writer.add_images("sample/images", make_grid(model.sample(n=16)))
+
 
 
 if __name__ == "__main__":
