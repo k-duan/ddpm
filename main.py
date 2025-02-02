@@ -52,6 +52,7 @@ def main():
             t = np.random.randint(0, max_t+1)
             xt, epsilon_pred, loss = model(images, epsilon, t)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             writer.add_images("train/x0", make_grid(images), i)
             writer.add_images("train/xt", make_grid(xt), i)
