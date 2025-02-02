@@ -62,8 +62,10 @@ def main():
             i += 1
 
             if i > 1 and i % sample_every_n_iters == 0:
-                writer.add_images("sample/images", make_grid(model.sample(n=16)))
-
+                xt, saved = model.sample(n=16, save_every_n_steps=100)
+                writer.add_images("sample/xt", make_grid(xt), i)
+                for i_x, saved_x in saved:
+                    writer.add_images(f"sample/x_{i_x}", make_grid(saved_x), i)
 
 
 if __name__ == "__main__":

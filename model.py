@@ -87,8 +87,9 @@ class DDPM(nn.Module):
         return prod
 
     @torch.no_grad()
-    def sample(self, n: int = 16) -> torch.Tensor:
+    def sample(self, n: int = 16, save_every_n_steps: int = 100) -> tuple[torch.Tensor, list[tuple[int, torch.Tensor]]]:
         xt = torch.randn(n, 3, 32, 32)
+        saved = []
         for t in reversed(range(self._max_t)):
             z = torch.randn_like(xt) if t > 1 else 0
             alpha_t = 1 - self.beta_t(t)
@@ -96,4 +97,6 @@ class DDPM(nn.Module):
             epsilon_pred = self._unet(xt)
             sigma_t = np.sqrt(1-alpha_t)
             xt = (1/np.sqrt(alpha_t)) * (xt - (1-alpha_t)/(np.sqrt(1-alpha_bar_t)) * epsilon_pred) + z * sigma_t
-        return xt
+            if t % save_every_n_steps == 0:
+                saved.append((t, xt))
+        return xt, saved
