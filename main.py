@@ -32,16 +32,15 @@ def grad_norm(parameters: Iterator[torch.nn.Parameter]) -> float:
          total_norm += param_norm.item() ** 2
    return total_norm ** 0.5
 
-
 def main():
     dataset = torchvision.datasets.CIFAR10("./CIFAR10", download=True)
     dataloader = DataLoader(dataset=dataset, batch_size=16, shuffle=True, collate_fn=collate_fn)
     log_name = f"cifar10-ddpm-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     writer = SummaryWriter(log_dir=f"runs/{log_name}")
-    max_t = 1000
+    max_t = 100
     model = DDPM(max_t)
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3)
-    n_epochs = 10
+    n_epochs = 50
     sample_every_n_iters = 1000
 
     i = 0
@@ -52,22 +51,22 @@ def main():
             t = np.random.randint(0, max_t+1)
             xt, epsilon_pred, loss = model(images, epsilon, t)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
             optimizer.step()
             writer.add_images("train/x0", make_grid(images), i)
             writer.add_images("train/xt", make_grid(xt), i)
             writer.add_scalar("train/t", t, i)
+            writer.add_images("train/epsilon", make_grid(epsilon), i)
             writer.add_images("train/epsilon_pred", make_grid(epsilon_pred), i)
             writer.add_scalar("train/loss", loss.item(), i)
             writer.add_scalar("train/grad_norm", grad_norm(model.parameters()), i)
             i += 1
 
             if i > 1 and i % sample_every_n_iters == 0:
-                xt, saved = model.sample(n=16, save_every_n_steps=100)
+                xt, saved = model.sample(n=16, save_every_n_steps=20)
                 writer.add_images("sample/xt", make_grid(xt), i)
                 for i_x, saved_x in saved:
                     writer.add_images(f"sample/x_{i_x}", make_grid(saved_x), i)
-
 
 if __name__ == "__main__":
     torch.manual_seed(123)
