@@ -16,7 +16,8 @@ def collate_fn(batch):
     for image, _ in batch:
         image = torch.from_numpy(np.array(image)).permute(2, 0, 1)
         images = torch.cat([images, image.unsqueeze(dim=0)])
-    images /= 255
+    images /= 127.5
+    images -= 1
     return images
 
 def make_grid(images: torch.Tensor) -> torch.Tensor:
@@ -39,8 +40,8 @@ def main():
     writer = SummaryWriter(log_dir=f"runs/{log_name}")
     max_t = 100
     model = DDPM(max_t)
-    optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3)
-    n_epochs = 50
+    optimizer = torch.optim.AdamW(params=model.parameters(), lr=5e-4)
+    n_epochs = 200
     sample_every_n_iters = 1000
 
     i = 0
@@ -48,14 +49,14 @@ def main():
         for images in dataloader:
             optimizer.zero_grad()
             epsilon = torch.randn_like(images)
-            t = np.random.randint(0, max_t+1)
+            t = torch.randint(0, max_t, (images.size(0),))
             xt, epsilon_pred, loss = model(images, epsilon, t)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             writer.add_images("train/x0", make_grid(images), i)
             writer.add_images("train/xt", make_grid(xt), i)
-            writer.add_scalar("train/t", t, i)
+            # writer.add_scalar("train/t", t, i)
             writer.add_images("train/epsilon", make_grid(epsilon), i)
             writer.add_images("train/epsilon_pred", make_grid(epsilon_pred), i)
             writer.add_scalar("train/loss", loss.item(), i)
