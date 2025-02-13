@@ -6,16 +6,27 @@ import torchvision
 from torch.utils.data import DataLoader
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+from PIL import Image
 
 from model import DDPM
 
 
-def collate_fn(batch):
+def collate_cifar10_fn(batch):
     # BxHxWxC
     images = torch.zeros((0, 3, 32, 32), dtype=torch.float32)
     for image, _ in batch:
         image = torch.from_numpy(np.array(image)).permute(2, 0, 1)
         images = torch.cat([images, image.unsqueeze(dim=0)])
+    images /= 127.5
+    images -= 1
+    return images
+
+def collate_mnist_fn(data: list[tuple[Image, int]]) -> torch.Tensor:
+    images = torch.zeros((0, 1, 28, 28), dtype=torch.float32)  # BxCxHxW, where H=28, W=28, C=1 for mnist
+    for image, _ in data:
+        images = torch.cat([images, torch.tensor(np.asarray(image)).view(1, 1, 28, 28)])
+    # zero pad to 32x32
+    images = torch.nn.functional.pad(images, (2, 2, 2, 2), mode='constant', value=0)
     images /= 127.5
     images -= 1
     return images
@@ -34,12 +45,25 @@ def grad_norm(parameters: Iterator[torch.nn.Parameter]) -> float:
    return total_norm ** 0.5
 
 def main():
-    dataset = torchvision.datasets.CIFAR10("./CIFAR10", download=True)
-    dataloader = DataLoader(dataset=dataset, batch_size=16, shuffle=True, collate_fn=collate_fn)
-    log_name = f"cifar10-ddpm-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
+    dataset_name = "mnist"
+    n_channels = {
+        "mnist": 1,
+        "cifar10": 3,
+    }
+    collate_fn = {
+        "mnist": collate_mnist_fn,
+        "cifar10": collate_cifar10_fn,
+    }
+    datasets = {
+        "mnist": torchvision.datasets.MNIST(f"./{dataset_name}", download=True),
+        "cifar10": torchvision.datasets.CIFAR10(f"./{dataset_name}", download=True),
+    }
+    dataset = datasets[dataset_name]
+    dataloader = DataLoader(dataset=dataset, batch_size=16, shuffle=True, collate_fn=collate_fn[dataset_name])
+    log_name = f"{dataset_name}-ddpm-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     writer = SummaryWriter(log_dir=f"runs/{log_name}")
     max_t = 100
-    model = DDPM(max_t)
+    model = DDPM(max_t=max_t, pos_emb=False, n_channels=n_channels[dataset_name])
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=5e-4)
     n_epochs = 200
     sample_every_n_iters = 1000
@@ -56,7 +80,6 @@ def main():
             optimizer.step()
             writer.add_images("train/x0", make_grid(images), i)
             writer.add_images("train/xt", make_grid(xt), i)
-            # writer.add_scalar("train/t", t, i)
             writer.add_images("train/epsilon", make_grid(epsilon), i)
             writer.add_images("train/epsilon_pred", make_grid(epsilon_pred), i)
             writer.add_scalar("train/loss", loss.item(), i)

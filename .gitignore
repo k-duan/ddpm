@@ -1,4 +1,5 @@
 .idea
 __pycache__
 runs
-CIFAR10
+cifar10
+mnist
