@@ -208,7 +208,7 @@ class DDPM(nn.Module):
         super().__init__()
         self._unet = UNet(max_t, pos_emb, n_channels)
         self._max_t = max_t
-        self._beta_schedule = torch.linspace(0.0001, 0.02, max_t)
+        self._beta_schedule = torch.linspace(0.0001, 0.02, max_t, dtype=torch.float64)
 
     def xt(self, x0: torch.Tensor, epsilon: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         """
@@ -242,14 +242,14 @@ class DDPM(nn.Module):
 
     @torch.no_grad()
     def beta_t(self, t: torch.Tensor) -> torch.Tensor:
-        return self._beta_schedule[t]
+        return self._beta_schedule[t].to(torch.float32)
 
     @torch.no_grad()
     def alpha_bar_t(self, t: torch.Tensor) -> torch.Tensor:
-        prods = torch.ones_like(self._beta_schedule)
+        prods = torch.ones_like(self._beta_schedule, dtype=torch.float64)
         for i in range(self._max_t):
             prods[i] = prods[i-1] * (1-self._beta_schedule[i]) if i > 0 else 1 - self._beta_schedule[0]
-        return prods[t]
+        return prods[t].to(torch.float32)
 
     @torch.no_grad()
     def sample(self, n: int = 16, n_channels: int = 3, save_every_n_steps: int = 100) -> tuple[torch.Tensor, list[tuple[int, torch.Tensor]]]:
