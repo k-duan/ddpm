@@ -21,6 +21,5 @@ class DDPMUnitTests(unittest.TestCase):
         # alpha_bar_1 = (1-beta_0) * (1-beta1)
         # alpha_bar_2 = (1-beta_0) * (1-beta1) * (1-beta2)
         alpha_bar_t = [self._ddpm.alpha_bar_t(torch.tensor(t)).item() for t in [0, 1, 2]]
-        print(alpha_bar_t)
         for a, expected_a in zip(alpha_bar_t, expected_alpha_bar_t):
             self.assertAlmostEqual(a, expected_a, delta=1e-4)
