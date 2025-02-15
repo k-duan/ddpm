@@ -69,7 +69,6 @@ class UNetV2(nn.Module):
 class DDPM(nn.Module):
     def __init__(self, max_t: int = 1000, pos_emb: bool = True, n_channels: int = 3):
         super().__init__()
-        # self._unet = UNet(max_t, pos_emb, n_channels)
         self._unet = UNetV2(n_channels)
         self._max_t = max_t
         self._beta_schedule = torch.linspace(0.0001, 0.02, max_t, dtype=torch.float64)
