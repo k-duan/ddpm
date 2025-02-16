@@ -59,12 +59,12 @@ def main():
         "cifar10": torchvision.datasets.CIFAR10(f"./{dataset_name}", download=True),
     }
     dataset = datasets[dataset_name]
-    dataloader = DataLoader(dataset=dataset, batch_size=16, shuffle=True, collate_fn=collate_fn[dataset_name])
+    dataloader = DataLoader(dataset=dataset, batch_size=64, shuffle=True, collate_fn=collate_fn[dataset_name])
     log_name = f"{dataset_name}-ddpm-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     writer = SummaryWriter(log_dir=f"runs/{log_name}")
     max_t = 100
-    model = DDPM(max_t=max_t, n_channels=n_channels[dataset_name])
-    optimizer = torch.optim.AdamW(params=model.parameters(), lr=5e-4)
+    model = DDPM(max_t=max_t, n_channels=n_channels[dataset_name], time_emb_dim=128)
+    optimizer = torch.optim.AdamW(params=model.parameters(), lr=4e-5)
     n_epochs = 200
     sample_every_n_iters = 1000
 
@@ -76,7 +76,7 @@ def main():
             t = torch.randint(0, max_t, (images.size(0),))
             xt, epsilon_pred, loss = model(images, epsilon, t)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             writer.add_images("train/x0", make_grid(images), i)
             writer.add_images("train/xt", make_grid(xt), i)
@@ -87,7 +87,7 @@ def main():
             i += 1
 
             if i > 1 and i % sample_every_n_iters == 0:
-                xt, saved = model.sample(n=16, n_channels=n_channels[dataset_name], save_every_n_steps=20)
+                xt, saved = model.sample(n=64, n_channels=n_channels[dataset_name], save_every_n_steps=20)
                 writer.add_images("sample/xt", make_grid(xt), i)
                 for i_x, saved_x in saved:
                     writer.add_images(f"sample/x_{i_x}", make_grid(saved_x), i)

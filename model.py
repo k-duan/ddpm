@@ -1,77 +1,102 @@
+import math
 import torch
 from torch import nn
 
 
+class SinusoidalPositionalEmbedding(nn.Module):
+    """
+    PE(pos, 2i) = sin(pos / 10000^{2i/D})
+    PE(pos, 2i+1) = cos(pos / 10000^{2i/D})
+    """
+    def __init__(self, max_len: int, emb_dim: int):
+        super().__init__()
+        pos = torch.arange(max_len)
+        denominator = torch.exp(-torch.arange(0, emb_dim, 2) * math.log(10000) / emb_dim)
+        self._pe = torch.zeros(max_len, emb_dim, dtype=torch.float32)
+        self._pe[:, 0::2] = torch.sin(pos.view(-1,1) * denominator.view(1,-1))
+        self._pe[:, 1::2] = torch.cos(pos.view(-1,1) * denominator.view(1,-1))
+        self.register_buffer("pe", self._pe)
+
+    def forward(self, pos):
+        # (B,)
+        return self._pe[pos, :]
+
 class BlockC(nn.Module):
-    def __init__(self, in_dims: int, out_dims: int, n_groups: int = 16):
+    def __init__(self, in_dims: int, out_dims: int, n_groups: int, time_emb_dim: int):
         super().__init__()
         self._conv = nn.Conv2d(in_dims, out_dims, 3, 1, padding='same')
+        self._conv_one = nn.Conv2d(in_dims, out_dims, 1)
+        self._time_emb_proj = nn.Linear(time_emb_dim, out_dims)
         self._norm = nn.GroupNorm(n_groups, out_dims)
 
-    def forward(self, x):
-        x = self._conv(x)
-        x = self._norm(x)
-        return nn.functional.silu(x)
+    def forward(self, x, time_emb):
+        return self._conv_one(x) + nn.functional.silu(self._norm(self._conv(x))) + self._time_emb_proj(time_emb).view(x.size(0), -1, 1, 1)
 
 class ConvBlock(nn.Module):
-    def __init__(self, n_channels: int, n_dims: int, n_layers: int = 4, max_pool: bool = True):
+    def __init__(self, n_channels: int, n_dims: int, n_layers: int, max_pool: bool, time_emb_dim: int):
         super().__init__()
-        self._blocks = nn.ModuleList([BlockC(n_dims if i > 0 else n_channels, n_dims) for i in range(n_layers)])
+        self._blocks = nn.ModuleList([BlockC(n_dims if i > 0 else n_channels, n_dims, 16, time_emb_dim) for i in range(n_layers)])
         self._max_pool = max_pool
 
-    def forward(self, x):
+    def forward(self, x, time_emb):
         for block in self._blocks:
-            x = block(x)
+            x = block(x, time_emb)
         if self._max_pool:
             x = nn.functional.max_pool2d(x, 2)
         return x
 
 class BlockD(nn.Module):
-    def __init__(self, in_dims: int, out_dims: int, n_groups: int = 16):
+    def __init__(self, in_dims: int, out_dims: int, n_groups: int):
         super().__init__()
         self._deconv = nn.ConvTranspose2d(in_dims, out_dims, 2, 2)
         self._norm = nn.GroupNorm(n_groups, out_dims)
 
-    def forward(self, x):
-        x = self._deconv(x)
+    def forward(self, x, time_emb):
+        x = self._deconv(x)  # skip connection
         x = self._norm(x)
         return nn.functional.silu(x)
 
 class DeconvBlock(nn.Module):
-    def __init__(self, n_channels: int, n_dims: int, n_layers: int = 4):
+    def __init__(self, n_channels: int, n_dims: int, n_layers: int, time_emb_dim: int):
         super().__init__()
-        self._blocks = nn.ModuleList([BlockC(n_dims, n_dims) if i > 0 else BlockD(n_channels, n_dims) for i in range(n_layers)])
+        self._blocks = nn.ModuleList([BlockC(n_dims, n_dims, 16, time_emb_dim) if i > 0 else BlockD(n_channels, n_dims, 16) for i in range(n_layers)])
 
-    def forward(self, x):
+    def forward(self, x, time_emb):
         for block in self._blocks:
-            x = block(x)
+            x = block(x, time_emb)
         return x
 
 class UNetV2(nn.Module):
-    def __init__(self, n_channels: int = 3):
+    def __init__(self, n_channels: int, max_t: int, time_emb_dim: int):
         super().__init__()
         conv_dims = [(n_channels,64,True), (64,128,True), (128,256,True), (256,512,False)]
         deconv_dims = [(512+256,256), (256+128,128), (128+64,64)]
-        self._conv_blocks = nn.ModuleList([ConvBlock(in_dim, out_dim, 4, max_pool) for in_dim, out_dim, max_pool in conv_dims])
-        self._deconv_blocks = nn.ModuleList([DeconvBlock(in_dim, out_dim, 4) for in_dim, out_dim in deconv_dims])
+        self._conv_blocks = nn.ModuleList([ConvBlock(in_dim, out_dim, 2, max_pool, time_emb_dim) for in_dim, out_dim, max_pool in conv_dims])
+        self._deconv_blocks = nn.ModuleList([DeconvBlock(in_dim, out_dim, 2, time_emb_dim) for in_dim, out_dim in deconv_dims])
         self._final_conv = nn.Conv2d(64, n_channels, 3, 1, padding='same')
+        # self._time_emb = nn.Embedding(max_t, time_emb_dim)
+        self._time_emb = SinusoidalPositionalEmbedding(max_len=max_t, emb_dim=time_emb_dim)
 
     def forward(self, x, t: torch.Tensor):
+        # x: (B,C,H,W)
+        # t: (B,)
         xi = [x]
+        time_emb = self._time_emb(t)
         for block in self._conv_blocks:
-            xi.append(block(xi[-1]))
+            xi.append(block(xi[-1], time_emb))
         y = xi[-1]
         for i, block in enumerate(self._deconv_blocks):
-            y = block(torch.cat([y, xi[len(xi)-i-2]], dim=1))
+            y = block(torch.cat([y, xi[len(xi)-i-2]], dim=1), time_emb)
         y = self._final_conv(y)
-        return torch.nn.functional.tanh(y)
+        y = nn.functional.tanh(y)
+        return y
 
 class DDPM(nn.Module):
-    def __init__(self, max_t: int = 1000, pos_emb: bool = True, n_channels: int = 3):
+    def __init__(self, max_t: int = 100, n_channels: int = 3, time_emb_dim: int = 256, beta_min: float = 0.0001, beta_max: float = 0.02):
         super().__init__()
-        self._unet = UNetV2(n_channels)
+        self._unet = UNetV2(n_channels=n_channels, max_t=max_t, time_emb_dim=time_emb_dim)
         self._max_t = max_t
-        self._beta_schedule = torch.linspace(0.0001, 0.02, max_t, dtype=torch.float64)
+        self._beta_schedule = torch.linspace(beta_min, beta_max, max_t, dtype=torch.float64)
 
     def xt(self, x0: torch.Tensor, epsilon: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         """
