@@ -2,6 +2,8 @@ import math
 import torch
 from torch import nn
 
+from unet import UNetV3
+
 
 class SinusoidalPositionalEmbedding(nn.Module):
     """
@@ -94,10 +96,16 @@ class UNetV2(nn.Module):
 class DDPM(nn.Module):
     def __init__(self, max_t: int = 100, n_channels: int = 3, time_emb_dim: int = 256, beta_min: float = 0.0001, beta_max: float = 0.02):
         super().__init__()
-        self._unet = UNetV2(n_channels=n_channels, max_t=max_t, time_emb_dim=time_emb_dim)
+        # self._unet = UNetV2(n_channels=n_channels, max_t=max_t, time_emb_dim=time_emb_dim)
+        self._unet = UNetV3(max_t, time_emb_dim, n_channels, 1, 32, dim_mults=[2,4,8,16])
         self._max_t = max_t
-        self._beta_schedule = torch.linspace(beta_min, beta_max, max_t, dtype=torch.float64)
+        self._betas = torch.linspace(beta_min, beta_max, max_t, dtype=torch.float64)
+        self._alpha_bars = self._alpha_bars()
 
+        self.register_buffer("betas", self._betas)
+        self.register_buffer("alpha_bars", self._alpha_bars)
+
+    @torch.no_grad()
     def xt(self, x0: torch.Tensor, epsilon: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         """
         :param x0: real images, (B,C,H,W)
@@ -130,15 +138,23 @@ class DDPM(nn.Module):
         return xt, epsilon_pred, loss
 
     @torch.no_grad()
+    def _linear_betas(self, beta_min, beta_max, max_t) -> torch.Tensor:
+        return torch.linspace(beta_min, beta_max, max_t, dtype=torch.float64)
+
+    @torch.no_grad()
+    def _alpha_bars(self) -> torch.Tensor:
+        prods = torch.ones_like(self._betas, dtype=torch.float64)
+        for i in range(self._max_t):
+            prods[i] = prods[i - 1] * (1 - self._betas[i]) if i > 0 else 1 - self._betas[0]
+        return prods
+
+    @torch.no_grad()
     def beta_t(self, t: torch.Tensor) -> torch.Tensor:
-        return self._beta_schedule[t].to(torch.float32)
+        return self._betas[t].to(torch.float32)
 
     @torch.no_grad()
     def alpha_bar_t(self, t: torch.Tensor) -> torch.Tensor:
-        prods = torch.ones_like(self._beta_schedule, dtype=torch.float64)
-        for i in range(self._max_t):
-            prods[i] = prods[i-1] * (1-self._beta_schedule[i]) if i > 0 else 1 - self._beta_schedule[0]
-        return prods[t].to(torch.float32)
+        return self._alpha_bars[t].to(torch.float32)
 
     @torch.no_grad()
     def sample(self, n: int = 16, n_channels: int = 3, save_every_n_steps: int = 100) -> tuple[torch.Tensor, list[tuple[int, torch.Tensor]]]:

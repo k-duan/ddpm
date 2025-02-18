@@ -63,8 +63,8 @@ def main():
     log_name = f"{dataset_name}-ddpm-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     writer = SummaryWriter(log_dir=f"runs/{log_name}")
     max_t = 100
-    model = DDPM(max_t=max_t, n_channels=n_channels[dataset_name], time_emb_dim=128)
-    optimizer = torch.optim.AdamW(params=model.parameters(), lr=4e-5)
+    model = DDPM(max_t=max_t, n_channels=n_channels[dataset_name], time_emb_dim=256)
+    optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3)
     n_epochs = 200
     sample_every_n_iters = 1000
 
