@@ -7,7 +7,7 @@ from model import DDPM
 class DDPMUnitTests(unittest.TestCase):
     def setUp(self):
         self._max_t = 100
-        self._ddpm = DDPM(max_t=self._max_t, pos_emb=False, n_channels=1)
+        self._ddpm = DDPM(max_t=self._max_t, n_channels=1)
 
     def testBeta(self):
         expected_beta_t = [0.0001, 0.0003, 0.0039, 0.02]

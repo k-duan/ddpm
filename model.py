@@ -14,10 +14,10 @@ class SinusoidalPositionalEmbedding(nn.Module):
         super().__init__()
         pos = torch.arange(max_len)
         denominator = torch.exp(-torch.arange(0, emb_dim, 2) * math.log(10000) / emb_dim)
-        self._pe = torch.zeros(max_len, emb_dim, dtype=torch.float32)
-        self._pe[:, 0::2] = torch.sin(pos.view(-1,1) * denominator.view(1,-1))
-        self._pe[:, 1::2] = torch.cos(pos.view(-1,1) * denominator.view(1,-1))
-        self.register_buffer("pe", self._pe)
+        pe = torch.zeros(max_len, emb_dim, dtype=torch.float32)
+        pe[:, 0::2] = torch.sin(pos.view(-1,1) * denominator.view(1,-1))
+        pe[:, 1::2] = torch.cos(pos.view(-1,1) * denominator.view(1,-1))
+        self.register_buffer("pe", pe)
 
     def forward(self, pos):
         # (B,)
